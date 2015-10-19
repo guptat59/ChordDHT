@@ -51,7 +51,6 @@ object Project2 {
         a ! new bootPeer(firstNode)
       }
     }
-
   }
 }
 
@@ -74,9 +73,10 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         // nth node.
       }
     }
+    
+    
 
     case h: hasFileKey => {
-
       var found = false;      
       if (range1 != null) {
         found = range1.contains(h.fileKey)
