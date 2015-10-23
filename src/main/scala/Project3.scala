@@ -38,7 +38,7 @@ object Chord {
 
   def main(args: Array[String]): Unit = {
 
-    var numNodes = 2;
+    var numNodes = 5;
     var numRequests = 10;
 
     if (args.length > 0) {
@@ -48,8 +48,8 @@ object Chord {
 
     var config = """
       akka {
-          loglevel = DEBUG
-      }"""
+          loglevel = DEBUG 
+      }""" 
     val system = ActorSystem(Constants.actorSystem, ConfigFactory.parseString(config))
 
     // totalSpace = ((math.ceil((math.log10(numNodes) / math.log10(2)))).toInt) * (2 ^ 10);    
@@ -114,7 +114,7 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         isJoined = true
       } else {
         var act = context.actorSelection(Constants.namingPrefix + b.myRandNeigh)
-        act ! findPredecessor(hashName, hashName, true)       
+        act ! findPredecessor(hashName, hashName, true)
         // predecessor = findPredecessor(b.myRandNeigh)
         // successor = findSuccessor(b.myRandNeigh)
         //  fillFingerTable(predecessor)
@@ -188,6 +188,7 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         var f = Future {
           Thread.sleep(10)
         }
+        self ! "print"
         //f.onComplete { case x => self.tell(initFingerTable(), self) } //println("me" + hashName + " pre: " + predecessor + " Succ: " + successor
         //f.onComplete { case x => self.tell("print", self) }
 
@@ -196,7 +197,7 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
 
     case p: setPredec => {
       log.debug("\tType:setPredec\t\tFrom:" + sender.path + "\tTo:" + hashName + "\t Msg: " + p)
-      if (isJoined && !p.fromNewbie) {
+      if (isJoined && p.fromNewbie) {
         predecessor = p.name;
       } else if (!isJoined && !p.fromNewbie) {
         predecessor = p.name
@@ -229,7 +230,10 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         if (start == end) {
           var act = context.actorSelection(Constants.namingPrefix + f.origin)
           act ! setPredec(start, false)
-        } else if ((f.key >= start && f.key < end) || ((f.key >= start && f.key < Constants.totalSpace) || (f.key >= 0 && f.key < end))) {
+        } else if (end > start && (f.key >= start && f.key < end)) {
+          var act = context.actorSelection(Constants.namingPrefix + f.origin)
+          act ! setPredec(start, false)
+        } else if (end < start && ((f.key >= start && f.key < Constants.totalSpace) || (f.key >= 0 && f.key < end))) {
           var act = context.actorSelection(Constants.namingPrefix + f.origin)
           act ! setPredec(start, false)
         } else {
