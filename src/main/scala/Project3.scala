@@ -4,7 +4,7 @@ import akka.actor.ActorSystem
 import akka.actor.Props
 import java.lang.Long
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{ HashMap, SynchronizedMap }
 import akka.actor.ActorRef
 import scala.concurrent.impl.Future
 import scala.concurrent.Future
@@ -15,10 +15,9 @@ import java.util.NoSuchElementException
 import com.sun.xml.internal.fastinfoset.tools.PrintTable
 import scala.concurrent.duration.Duration
 import java.util.concurrent.TimeUnit
-import akka.actor.Cancellable
-import akka.actor.Cancellable
-import akka.actor.Cancellable
-import akka.actor.Cancellable
+import java.util.concurrent.ConcurrentHashMap
+import scala.collection.convert.decorateAsScala._
+import scala.collection._
 
 object Constants {
   val nodePrefix = "Node-"
@@ -31,7 +30,8 @@ object Constants {
 object Chord {
 
   var nodesJoined: Int = 0;
-  var fileFound = new HashMap[Int, Int]
+  //var fileFound = new HashMap[Int, Int]
+  var fileFound: concurrent.Map[Int, Int] = new ConcurrentHashMap().asScala
   var TotalNumofHops = 0;
   def getHash(id: String, totalSpace: Int): Int = {
 
@@ -107,25 +107,27 @@ object Chord {
       println("===========================================================")
     }
 
-    while (Chord.nodesJoined != numNodes) {}
+    while (Chord.nodesJoined != numNodes) {
+      Thread.sleep(1000)
+      println("Still joining.....")
+    }
     var initTime = System.currentTimeMillis();
     for (i <- 1 to numNodes) {
       var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
       var node = system.actorSelection(Constants.namingPrefix + hashName)
       node ! new findFile(numRequests);
     }
-    var finalTime = System.currentTimeMillis();
-    println("Total time to initate " + (finalTime - initTime))
+    println("Total time to initate " + (System.currentTimeMillis() - initTime))
     var temp = 0;
     initTime = System.currentTimeMillis();
     while (fileFound.size != 100) {
-      Thread.sleep(1)
-    }
-    finalTime = System.currentTimeMillis()
-    println("Hey here I am" + (finalTime - initTime))
-    println("Hey here I am" + fileFound)
-    println("Hey here I am" + fileFound.size)
-    println("Hey here I am" + TotalNumofHops)
+      Thread.sleep(1000)
+      println("Still searching.....Found so far : " + fileFound.size)
+    }    
+    println("Total time elapsed:    " + (System.currentTimeMillis()- initTime))
+    println("Files found:           " + fileFound.size)
+    println("Total number of hops:  " + TotalNumofHops)
+    println("List of files:       \n" + fileFound)
     System.exit(0)
   }
 }
@@ -179,7 +181,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
       for (i <- 1 to fr.numRequests) {
         var fileStringName = Constants.namingPrefix + hashName + i;
         var fileHashName = Chord.getHash(fileStringName, Constants.totalSpace)
-        scheduler.scheduleOnce(Duration(1, TimeUnit.SECONDS), self, findSingleFile(fileHashName))
+        scheduler.scheduleOnce(Duration(i, TimeUnit.SECONDS), self, findSingleFile(fileHashName))
       }
       log.info("created in " + (System.currentTimeMillis() - timestamp))
     }
@@ -208,7 +210,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
         act ! findSingleFile(fileHashName)
       }
     }
-    
+
     case join: join => {
 
       if (join.myRandNeigh == -1) {
@@ -439,7 +441,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
   }
 
   def foundFile(fileName: Int, foundAt: Int): Unit = {
-    Chord.fileFound(fileName) = foundAt;
+    Chord.fileFound(fileName) = foundAt
   }
 
   def printTable(): Unit = {
