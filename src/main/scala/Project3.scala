@@ -38,7 +38,7 @@ object Chord {
 
   def main(args: Array[String]): Unit = {
 
-    var numNodes = 10;
+    var numNodes = 30;
     var numRequests = 10;
 
     if (args.length > 0) {
@@ -48,7 +48,7 @@ object Chord {
 
     var config = """
       akka {
-          loglevel = DEBUG
+          loglevel = INFO
       }"""
     val system = ActorSystem(Constants.actorSystem, ConfigFactory.parseString(config))
 
@@ -66,34 +66,34 @@ object Chord {
         Thread.sleep(1000)
         println("First Node" + firstNode)
       } else {
-        Thread.sleep(5000)
+        Thread.sleep(200)
         // Use the firstNode as the neighbor to lookup information.
         var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
         println("Initializing the peer " + i + " with hash Id " + hashName)
         var node = system.actorOf(Props(new Peer(hashName, Constants.nodePrefix + i)), hashName.toString())
         node ! new join(firstNode)
-        Thread.sleep(5000)
-        println("===========================================================")
-        for (j <- 1 to i) {
-          Thread.sleep(200)
-          var hashName = getHash(Constants.nodePrefix + j, Constants.totalSpace)
-          var node = system.actorSelection(Constants.namingPrefix + hashName)
-          node ! "print"
-          node ! "printTable"
-          Thread.sleep(200)
-        }
-        println("===========================================================")
+        Thread.sleep(200)
+        //        println("===========================================================")
+        //        for (j <- 1 to i) {
+        //          Thread.sleep(200)
+        //          var hashName = getHash(Constants.nodePrefix + j, Constants.totalSpace)
+        //          var node = system.actorSelection(Constants.namingPrefix + hashName)
+        //          node ! "print"
+        //          node ! "printTable"
+        //          Thread.sleep(200)
+        //        }
+        //        println("===========================================================")
       }
     }
     Thread.sleep(1000)
     for (i <- 1 to numNodes) {
       println("===========================================================")
-      Thread.sleep(1000)
+      Thread.sleep(10)
       var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
       var node = system.actorSelection(Constants.namingPrefix + hashName)
       node ! "print"
-      node ! "printTable"
-      Thread.sleep(1000)
+      //node ! "printTable"
+      Thread.sleep(10)
       println("===========================================================")
     }
     //System.exit(0)
@@ -122,8 +122,6 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
   }
 
   val log = Logging(context.system, this)
-  // var range1: Range = null;
-  // var range2: Range = null;
   var finger = new HashMap[Int, Int]
   var successor: Int = -1;
   var predecessor: Int = -1;
@@ -141,14 +139,12 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
 
       if (join.myRandNeigh == -1) {
         // Implies first Node.
-        //range1 = hashName to Project2.totalSpace - 1
-        //range2 = 0 to hashName-1
         successor = hashName;
         predecessor = hashName;
         fillFingerTable(-1);
         isJoined = true
         self ! "printTable"
-        println("Timetaken to boot node " + hashName + " is " + (System.currentTimeMillis() - timeStamp))
+        log.info("Timetaken to boot node " + hashName + " is " + (System.currentTimeMillis() - timeStamp))
       } else {
         var act = context.actorSelection(Constants.namingPrefix + join.myRandNeigh)
         act ! findPredecessor(hashName, hashName, Consts.setRequest, null)
@@ -160,7 +156,6 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
       if (fg.Type.equals(Consts.fingerRequest)) {
         if (fg.i <= Constants.m) {
           var curIndex = fg.i + 1
-          //finger(a.hashKey) = a.node
           finger(fg.i) = fg.node
           var nextStart: Int = getFingerId(curIndex)
           //          while (nextStart < fg.node && curIndex < Constants.m) {
@@ -176,14 +171,10 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
           } else {
             //All neighbors are found. Nothing to do.
             log.debug("All actors are found!!")
-            isJoined = true;
             self ! updateOthers()
           }
         } else {
           //All neighbors are found. Nothing to do.
-          //          log.debug("All actors are found")
-          //          self ! "printTable"
-          //          self ! updateOthers()
         }
       }
     }
@@ -192,7 +183,6 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
       var preActor = context.actorSelection(Constants.namingPrefix + predecessor)
       var updateableNodes = new HashMap[Int, Int]
       for (i <- 0 until Constants.m) {
-        //var i = 0
         var temp = -1
         var pow = Math.pow(2, i).toInt;
         if (pow < hashName) {
@@ -201,7 +191,6 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
           temp = Constants.totalSpace - Math.abs(hashName - pow)
         }
         updateableNodes.put(i, temp);
-        //searchForPredecs.append(temp+"#"+i)
       }
       log.debug("List of predecs to update : " + updateableNodes)
       for (i <- 0 until Constants.m) {
@@ -210,34 +199,14 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
           preActor ! findPredecessor(updateableNodes(i), hashName, Consts.fingerUpdate, "" + i)
         }
       }
-
-      //isJoined = true;
-      // log.debug("Predecs " + searchForPredecs)
-      // self ! updatePredecessorTables()
+      log.info(hashName + "joined with succ : " + successor + " and predec: " + predecessor)
+      isJoined = true;
     }
-
-    case upt: updatePredecessorTables => {
-      if (searchForPredecs.length > 0) {
-        var temp = searchForPredecs(0)
-        searchForPredecs.remove(0);
-      }
-    }
-
+  
     case h: hasFileKey => {
 
       var found = false;
 
-      /*var found = false;
-      if (range1 != null) {
-        found = range1.contains(h.fileKey)
-        if (!found) {
-          if (range2 != null) found = range2.contains(h.fileKey)
-        }
-      }
-      if (found) {
-        println("Found key " + h.fileKey + " at node " + context.self.path.name)
-      }
-    }*/
     }
 
     case gs: getSucc => {
@@ -269,11 +238,10 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         }
         f.onComplete {
           case x =>
-            println("Finger Initing me : " + hashName + " pre: " + predecessor + " Succ: " + successor)
+            log.debug("Finger Initing me : " + hashName + " pre: " + predecessor + " Succ: " + successor)
             finger(0) = successor
             self.tell(Finger(-1, finger(0), Consts.fingerRequest, 0), self)
         }
-        //f.onComplete { case x => self.tell("print", self) }
       }
     }
 
@@ -385,7 +353,6 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
             act ! Finger(s.key, finger(closetNeigh), s.Type, s.i)
           } else {
             var act = context.actorSelection(Constants.namingPrefix + finger(closetNeigh))
-            println(finger)
             act ! findSuccessor(s.key, s.origin, s.Type, s.i)
           }
         }
@@ -394,7 +361,7 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
 
     case x: String => {
       if (x.equals("print")) {
-        log.debug("My name " + hashName + " Pre: " + predecessor + " Succ: " + successor)
+        log.info("My name " + hashName + " Pre: " + predecessor + " Succ: " + successor)
       } else if (x.equals("printTable")) {
         printTable()
       }
@@ -414,11 +381,7 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
     if (myRandNeigh == -1) {
       for (i <- 0 until Constants.m) {
         finger(i) = hashName
-        //finger((hashName + Math.pow(2, i).toInt) % Constants.totalSpace) = hashName
       }
-      //println("fillFingerTable" + finger)
-    } else {
-      //update
     }
   }
 
@@ -470,56 +433,10 @@ class Peer(val hashName: Int, val abstractName: String) extends Actor {
         keyFound = i;
         negativeNeigh = diff
       }
-
     }
 
     log.debug("Neigh found : " + finger(keyFound) + " for key " + key)
     printTable()
-
-    //log.debug("Map size : " + finger.size + finger.toString())
-
-    /*for (i <- 0 until Constants.m) {
-      current = finger(i)
-      if (farthestNeigh < current) farthestNeigh = i
-      if (finger(i) < key) {
-        // Do nothing, continue loop search
-      } else {
-        if (i == 0) {
-          keyFound = Constants.m - 1
-        } else {
-          keyFound = i - 1
-        }
-        keyFound
-      }
-    }
-
-    if (keyFound == Integer.MIN_VALUE) {
-      log.error("This should not happen ####################################")
-      log.error(finger.toString())
-      log.error("This should not happen ####################################")
-      keyFound = Constants.m - 1
-    }*/
-    keyFound
-  }
-
-  def closestPrecedingFingerOld(key: Int): Int = {
-    var keyFound = Integer.MIN_VALUE
-    var farthestNeigh = Integer.MIN_VALUE
-    var it = finger.keys.iterator
-    while (it.hasNext) {
-
-      var current = it.next().toInt
-      if (farthestNeigh < current) farthestNeigh = current
-      if (current < key) {
-        if (keyFound < current) {
-          keyFound = current
-        }
-      }
-    }
-    // No assignment happened. Assign the maximum value. 
-    if (keyFound == Integer.MIN_VALUE) {
-      keyFound = farthestNeigh
-    }
     keyFound
   }
 }
