@@ -48,7 +48,7 @@ object Chord {
 
   def main(args: Array[String]): Unit = {
 
-    var numNodes = 10;
+    var numNodes = 64;
     var numRequests = 10;
     var avgHopsinSystem = 0;
     if (args.length > 0) {
@@ -61,8 +61,7 @@ object Chord {
           loglevel = INFO
       }"""
     val system = ActorSystem(Constants.actorSystem, ConfigFactory.parseString(config))
-
-    // totalSpace = ((math.ceil((math.log10(numNodes) / math.log10(2)))).toInt) * (2 ^ 10);    
+    
     var firstNode: Int = -1;
     var node_1: ActorRef = null;
     for (i <- 1 to numNodes) {
@@ -76,26 +75,16 @@ object Chord {
         Thread.sleep(1000)
         println("First Node" + firstNode)
       } else {
-        Thread.sleep(200)
+        Thread.sleep(100)
         // Use the firstNode as the neighbor to lookup information.
         var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
         println("Initializing the peer " + i + " with hash Id " + hashName)
         var node = system.actorOf(Props(new Peer(hashName, Constants.nodePrefix + i, numRequests)), hashName.toString())
         node ! new join(firstNode)
-        Thread.sleep(200)
-        //        println("===========================================================")
-        //        for (j <- 1 to i) {
-        //          Thread.sleep(200)
-        //          var hashName = getHash(Constants.nodePrefix + j, Constants.totalSpace)
-        //          var node = system.actorSelection(Constants.namingPrefix + hashName)
-        //          node ! "print"
-        //          node ! "printTable"
-        //          Thread.sleep(200)
-        //        }
-        //        println("===========================================================")
+        Thread.sleep(1)
       }
     }
-    Thread.sleep(1000)
+    Thread.sleep(100)
     for (i <- 1 to numNodes) {
       println("===========================================================")
       Thread.sleep(10)
@@ -120,7 +109,7 @@ object Chord {
     println("Total time to initate " + (System.currentTimeMillis() - initTime))
     var temp = 0;
     initTime = System.currentTimeMillis();
-    while (fileFound.size != 100) {
+    while (fileFound.size != (numNodes * numRequests)) {
       Thread.sleep(1000)
       println("Still searching.....Found so far : " + fileFound.size)
     }    
