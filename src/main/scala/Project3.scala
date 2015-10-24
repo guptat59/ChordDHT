@@ -13,6 +13,12 @@ import akka.event.Logging
 import com.typesafe.config.ConfigFactory
 import java.util.NoSuchElementException
 import com.sun.xml.internal.fastinfoset.tools.PrintTable
+import scala.concurrent.duration.Duration
+import java.util.concurrent.TimeUnit
+import akka.actor.Cancellable
+import akka.actor.Cancellable
+import akka.actor.Cancellable
+import akka.actor.Cancellable
 
 object Constants {
   val nodePrefix = "Node-"
@@ -113,12 +119,7 @@ object Chord {
     var temp = 0;
     initTime = System.currentTimeMillis();
     while (fileFound.size != 100) {
-      //      if(temp != fileFound.size)
-      //      {
-      //Thread.sleep(100000)
-      //println(fileFound.size + "---" + TotalNumofHops)
-      //    temp = fileFound.size
-      //   }
+      Thread.sleep(1)
     }
     finalTime = System.currentTimeMillis()
     println("Hey here I am" + (finalTime - initTime))
@@ -170,52 +171,44 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
 
   def receive = {
     case fr: findFile => {
+
+      var timestamp = System.currentTimeMillis()
+      var reqsTobeMade = fr.numRequests
+      val scheduler = context.system.scheduler
+
       for (i <- 1 to fr.numRequests) {
-        noOfFilesToBeFound = fr.numRequests
-        var f = Future {
-          Thread.sleep(1000)
-        }
-        f.onComplete {
-          case x =>
-            log.info(" Howle")
-            var fileStringName = Constants.namingPrefix + hashName + i;
-            var fileHashName = Chord.getHash(fileStringName, Constants.totalSpace)
-            self ! findSingleFile(fileHashName)
-        }
+        var fileStringName = Constants.namingPrefix + hashName + i;
+        var fileHashName = Chord.getHash(fileStringName, Constants.totalSpace)
+        scheduler.scheduleOnce(Duration(1, TimeUnit.SECONDS), self, findSingleFile(fileHashName))
       }
+      log.info("created in " + (System.currentTimeMillis() - timestamp))
     }
 
     case fsf: findSingleFile => {
+      log.debug("search running" + System.currentTimeMillis())
       Chord.TotalNumofHops = Chord.TotalNumofHops + 1;
       var fileHashName = fsf.fileHashName
       var found: Boolean = false;
       var maxPredecessor: Int = -1;
-      if ((fileHashName <= hashName && fileHashName > predecessor) || (hashName < predecessor && (fileHashName > predecessor || fileHashName <= hashName))) {
+
+      var isForwarded: Boolean = false
+      if (amITheSuccessor(fileHashName)) {
         foundFile(fileHashName, hashName)
         found = true;
-      } else if (!found) {
-        if ((fileHashName > hashName && fileHashName <= successor) || (successor < hashName && (fileHashName > hashName || fileHashName <= successor))) {
-          foundFile(fileHashName, successor)
-          found = true;
-        }
       }
-      if (!found) {
-        for (j <- 0 to Constants.m - 1) {
-          if ((finger(j) < fileHashName)) {
-            if (maxPredecessor < finger(j)) {
-              maxPredecessor = finger(j);
-            }
-          }
-        }
-        if (maxPredecessor == -1) {
-          var act = context.actorSelection(Constants.namingPrefix + successor)
-          act ! findSingleFile(fileHashName)
-        } else if (maxPredecessor != -1) {
-          var act = context.actorSelection(Constants.namingPrefix + maxPredecessor)
-          act ! findSingleFile(fileHashName)
-        }
+
+      if (!found && amIThePredecessor(fileHashName)) {
+        var act = context.actorSelection(Constants.namingPrefix + successor)
+        act ! findSingleFile(fileHashName)
+        isForwarded = true
+      }
+
+      if (!found && !isForwarded) {
+        var act = context.actorSelection(Constants.namingPrefix + finger(closestPrecedingFinger(fileHashName)))
+        act ! findSingleFile(fileHashName)
       }
     }
+    
     case join: join => {
 
       if (join.myRandNeigh == -1) {
@@ -240,13 +233,6 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
           var curIndex = fg.i + 1
           finger(fg.i) = fg.node
           var nextStart: Int = getFingerId(curIndex)
-          //          while (nextStart < fg.node && curIndex < Constants.m) {
-          //            //finger(nextStart) = a.node
-          //            finger(curIndex) = fg.node
-          //            curIndex = curIndex + 1
-          //            log.debug("nextStart : " + nextStart + " a.node : " + fg.node + " i : " + curIndex)
-          //            nextStart = (hashName + Math.pow(2, curIndex).toInt) % Constants.totalSpace
-          //          }
           if (curIndex < Constants.m) {
             var sucActor = context.actorSelection(Constants.namingPrefix + successor)
             sucActor ! findSuccessor(nextStart, hashName, Consts.fingerRequest, curIndex)
@@ -453,7 +439,6 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
   }
 
   def foundFile(fileName: Int, foundAt: Int): Unit = {
-
     Chord.fileFound(fileName) = foundAt;
   }
 
