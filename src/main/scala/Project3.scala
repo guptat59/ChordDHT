@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.convert.decorateAsScala._
 import scala.collection._
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicBoolean
 
 object Constants {
   val nodePrefix = "Node-"
@@ -32,7 +34,13 @@ object Chord {
   var nodesJoined: Int = 0;
   //var fileFound = new HashMap[Int, Int]
   var fileFound: concurrent.Map[Int, Int] = new ConcurrentHashMap().asScala
+  var globalCounter: AtomicInteger = new AtomicInteger()
+  var flipper: AtomicBoolean = new AtomicBoolean(true)
   var TotalNumofHops = 0;
+
+  def incrementCounter(): Unit = {
+    globalCounter.incrementAndGet()
+  }
   def getHash(id: String, totalSpace: Int): Int = {
 
     // Maximum total hash space can be 2 ^ 30.
@@ -48,7 +56,7 @@ object Chord {
 
   def main(args: Array[String]): Unit = {
 
-    var numNodes = 64;
+    var numNodes = 10;
     var numRequests = 10;
     var avgHopsinSystem = 0;
     if (args.length > 0) {
@@ -61,7 +69,7 @@ object Chord {
           loglevel = INFO
       }"""
     val system = ActorSystem(Constants.actorSystem, ConfigFactory.parseString(config))
-    
+
     var firstNode: Int = -1;
     var node_1: ActorRef = null;
     for (i <- 1 to numNodes) {
@@ -75,48 +83,62 @@ object Chord {
         Thread.sleep(1000)
         println("First Node" + firstNode)
       } else {
-        Thread.sleep(100)
+        var x = flipper.get()
         // Use the firstNode as the neighbor to lookup information.
         var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
         println("Initializing the peer " + i + " with hash Id " + hashName)
         var node = system.actorOf(Props(new Peer(hashName, Constants.nodePrefix + i, numRequests)), hashName.toString())
         node ! new join(firstNode)
-        Thread.sleep(1)
+        while (x == flipper.get && nodesJoined < numNodes) {
+          //Sleep until the flipper is flipped successfully. 
+          //This happens when the above node is joined successfully and flips.
+          Thread.sleep(1)
+        }        
       }
     }
     Thread.sleep(100)
-    for (i <- 1 to numNodes) {
-      println("===========================================================")
-      Thread.sleep(10)
-      var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
-      var node = system.actorSelection(Constants.namingPrefix + hashName)
-      node ! "print"
-      //node ! "printTable"
-      Thread.sleep(10)
-      println("===========================================================")
-    }
-
-    while (Chord.nodesJoined != numNodes) {
-      Thread.sleep(1000)
-      println("Still joining.....")
-    }
+       for (i <- 1 to numNodes) {
+          println("===========================================================")
+          Thread.sleep(10)
+          var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
+          var node = system.actorSelection(Constants.namingPrefix + hashName)
+          node ! "print"
+          //node ! "printTable"
+          Thread.sleep(10)
+          println("===========================================================")
+        }
     var initTime = System.currentTimeMillis();
+    var buffer: Int = 50
+    while (Chord.nodesJoined < numNodes - buffer) {
+      Thread.sleep(100)
+      println("Still joining....." + Chord.nodesJoined)
+    }
+    Thread.sleep(20000)
+    var bootTime = (System.currentTimeMillis() - initTime)
+    println("Total time to initate " + bootTime)
+
+    initTime = System.currentTimeMillis();
     for (i <- 1 to numNodes) {
+      println("Scheduling file search for node : " + i)
       var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
       var node = system.actorSelection(Constants.namingPrefix + hashName)
       node ! new findFile(numRequests);
     }
-    println("Total time to initate " + (System.currentTimeMillis() - initTime))
-    var temp = 0;
-    initTime = System.currentTimeMillis();
-    while (fileFound.size != (numNodes * numRequests)) {
+    var bufferable: Int = (0.005 * numNodes * numRequests).toInt
+    while ((globalCounter.get() < (numNodes * numRequests) - bufferable)) {
       Thread.sleep(1000)
       println("Still searching.....Found so far : " + fileFound.size)
-    }    
-    println("Total time elapsed:    " + (System.currentTimeMillis()- initTime))
-    println("Files found:           " + fileFound.size)
+    }
+    var searchTime = (System.currentTimeMillis() - initTime)
+    println("Search over. buffer sleeping.")
+    Thread.sleep(10000)
+    println("Input NumNodes, NumReq:" + numNodes + "," + numRequests)
+    println("Total time to join:    " + bootTime)
+    println("Total search time :    " + searchTime)
+    println("Files found:           " + globalCounter.get())
     println("Total number of hops:  " + TotalNumofHops)
-    println("List of files:       \n" + fileFound)
+    println("Average number of hops:" + TotalNumofHops / (numNodes * numRequests))
+    //println("List of files:       \n" + fileFound)
     System.exit(0)
   }
 }
@@ -207,8 +229,8 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
         successor = hashName;
         predecessor = hashName;
         fillFingerTable(-1);
-        isJoined = true
-        Chord.nodesJoined = Chord.nodesJoined + 1;
+        isJoined = true              
+        Chord.nodesJoined = Chord.nodesJoined + 1;        
         //self ! "printTable"
         log.info("Timetaken to boot node " + hashName + " is " + (System.currentTimeMillis() - timeStamp))
       } else {
@@ -261,6 +283,8 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
       log.info(hashName + "joined with succ : " + successor + " and predec: " + predecessor)
       isJoined = true;
       Chord.nodesJoined = Chord.nodesJoined + 1;
+      var temp = Chord.flipper.get()  
+      Chord.flipper.set(!temp)
     }
 
     case h: hasFileKey => {
@@ -430,6 +454,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
   }
 
   def foundFile(fileName: Int, foundAt: Int): Unit = {
+    Chord.incrementCounter()
     Chord.fileFound(fileName) = foundAt
   }
 
