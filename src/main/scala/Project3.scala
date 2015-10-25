@@ -138,7 +138,7 @@ object Chord {
     println("Files found:           " + globalCounter.get())
     println("Total number of hops:  " + TotalNumofHops)
     println("Average number of hops:" + TotalNumofHops / (numNodes * numRequests))
-    //println("List of files:       \n" + fileFound)
+    println("List of files:       \n" + fileFound)
     System.exit(0)
   }
 }
