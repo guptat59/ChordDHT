@@ -28,15 +28,21 @@ To run the bonus part, set the value of deletionEnabled argument to True.
 -------------------------------------------
 Largest network ? 
 
-19000 Nodes.
+19500 Nodes.
 
 Detailed output:
-Input NumNodes, NumReq:19000,10
-Total time to join:    20015
-Total search time :    84860
-Files found:           190000
-Total number of hops:  1697091
-Average number of hops:8
+[WITHOUT FAILURE ENABLED]
+NUMBER OF NODES       :19500
+NUMBER OF REQUESTS    :10
+FAILURE ENABLED:      :false
+TIME TAKEN TO JOIN    :1000
+TIME TAKEN TO SEARCH  :66268
+NUMBER OF FILES FOUND :195000
+NUMBER OF TOTAL HOPS  :1737060
+AVERAGE NUMBER OF HOPS:8
+LOG(NUMNODES)         :14.251186503524336
+
+[WITH FAILURE ENABLED]
 
 *Time in ms
 -------------------------------------------
