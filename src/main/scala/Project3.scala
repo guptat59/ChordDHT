@@ -4,7 +4,7 @@ import akka.actor.ActorSystem
 import akka.actor.Props
 import java.lang.Long
 import scala.collection.mutable.ArrayBuffer
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.{ HashMap, SynchronizedMap }
 import akka.actor.ActorRef
 import scala.concurrent.impl.Future
 import scala.concurrent.Future
@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.convert.decorateAsScala._
 import scala.collection._
+import java.util.concurrent.atomic.AtomicInteger
 
 object Constants {
   val nodePrefix = "Node-"
@@ -25,10 +26,6 @@ object Constants {
   val totalSpace: Int = Math.pow(2, m).toInt
   val actorSystem = "ChordSys"
   val namingPrefix = "akka://" + actorSystem + "/user/"
-  val fingerRequest = "fingerRequest"
-  val setRequest = "setRequest"
-  val fingerUpdate = "fingerUpdate"
-  val fileSearch = "fileSearch"
 }
 
 object Chord {
@@ -36,7 +33,12 @@ object Chord {
   var nodesJoined: Int = 0;
   //var fileFound = new HashMap[Int, Int]
   var fileFound: concurrent.Map[Int, Int] = new ConcurrentHashMap().asScala
+  var globalCounter: AtomicInteger = new AtomicInteger()
   var TotalNumofHops = 0;
+
+  def incrementCounter(): Unit = {
+    globalCounter.incrementAndGet()
+  }
   def getHash(id: String, totalSpace: Int): Int = {
 
     // Maximum total hash space can be 2 ^ 30.
@@ -50,14 +52,9 @@ object Chord {
       0
   }
 
-  var config = """
-      akka {
-          loglevel = INFO
-      }"""
-
   def main(args: Array[String]): Unit = {
 
-    var numNodes = 64;
+    var numNodes = 10;
     var numRequests = 10;
     var avgHopsinSystem = 0;
     if (args.length > 0) {
@@ -65,6 +62,10 @@ object Chord {
       numRequests = args(1).toInt
     }
 
+    var config = """
+      akka {
+          loglevel = INFO
+      }"""
     val system = ActorSystem(Constants.actorSystem, ConfigFactory.parseString(config))
 
     var firstNode: Int = -1;
@@ -90,39 +91,46 @@ object Chord {
       }
     }
     Thread.sleep(100)
-    if (true) {
-      for (i <- 1 to numNodes) {
-        println("===========================================================")
-        Thread.sleep(10)
-        var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
-        var node = system.actorSelection(Constants.namingPrefix + hashName)
-        node ! "print"
-        //node ! "printTable"
-        Thread.sleep(10)
-        println("===========================================================")
-      }
+    for (i <- 1 to numNodes) {
+      println("===========================================================")
+      Thread.sleep(10)
+      var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
+      var node = system.actorSelection(Constants.namingPrefix + hashName)
+      node ! "print"
+      //node ! "printTable"
+      Thread.sleep(10)
+      println("===========================================================")
     }
-
-    while (Chord.nodesJoined != numNodes) {
+    var initTime = System.currentTimeMillis();
+    var buffer: Int = 0
+    while (Chord.nodesJoined < numNodes - buffer) {
       Thread.sleep(1000)
       println("Still joining.....")
     }
-    var initTime = System.currentTimeMillis();
+    Thread.sleep(1000)
+    var bootTime = (System.currentTimeMillis() - initTime)
+    println("Total time to initate " + bootTime)
+
+    initTime = System.currentTimeMillis();
     for (i <- 1 to numNodes) {
       var hashName = getHash(Constants.nodePrefix + i, Constants.totalSpace)
       var node = system.actorSelection(Constants.namingPrefix + hashName)
       node ! new findFile(numRequests);
     }
-    println("Total time to initate " + (System.currentTimeMillis() - initTime))
-    var temp = 0;
-    initTime = System.currentTimeMillis();
-    while (fileFound.size != (numNodes * numRequests)) {
+    var bufferable: Int = (0.005 * numNodes * numRequests).toInt
+    while ((globalCounter.get() < (numNodes * numRequests) - bufferable)) {
       Thread.sleep(1000)
       println("Still searching.....Found so far : " + fileFound.size)
     }
-    println("Total time elapsed:    " + (System.currentTimeMillis() - initTime))
-    println("Files found:           " + fileFound.size)
+    var searchTime = (System.currentTimeMillis() - initTime)
+    println("Search over. buffer sleeping.")
+    Thread.sleep(10000)
+    println("Input NumNodes, NumReq:" + numNodes + "," + numRequests)
+    println("Total time to join:    " + bootTime)
+    println("Total search time :    " + searchTime)
+    println("Files found:           " + globalCounter.get())
     println("Total number of hops:  " + TotalNumofHops)
+    println("Average number of hops:" + TotalNumofHops / (numNodes * numRequests))
     println("List of files:       \n" + fileFound)
     System.exit(0)
   }
@@ -142,9 +150,15 @@ case class updateOthers() extends Seal
 case class updatePredecessorTables() extends Seal
 case class findFile(numRequests: Int) extends Seal
 case class findSingleFile(fileHashName: Int) extends Seal
-case class handleDelete(revampAfter: Int) extends Seal
 
 class Peer(val hashName: Int, val abstractName: String, val requests: Int) extends Actor {
+
+  object Consts {
+    val fingerRequest = "fingerRequest"
+    val setRequest = "setRequest"
+    val fingerUpdate = "fingerUpdate"
+    val fileSearch = "fileSearch"
+  }
 
   val log = Logging(context.system, this)
   var finger = new HashMap[Int, Int]
@@ -162,6 +176,44 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
   var noOfFilesToBeFound = -1
 
   def receive = {
+    case fr: findFile => {
+
+      var timestamp = System.currentTimeMillis()
+      var reqsTobeMade = fr.numRequests
+      val scheduler = context.system.scheduler
+
+      for (i <- 1 to fr.numRequests) {
+        var fileStringName = Constants.namingPrefix + hashName + i;
+        var fileHashName = Chord.getHash(fileStringName, Constants.totalSpace)
+        scheduler.scheduleOnce(Duration(i, TimeUnit.SECONDS), self, findSingleFile(fileHashName))
+      }
+      log.info("created in " + (System.currentTimeMillis() - timestamp))
+    }
+
+    case fsf: findSingleFile => {
+      log.debug("search running" + System.currentTimeMillis())
+      Chord.TotalNumofHops = Chord.TotalNumofHops + 1;
+      var fileHashName = fsf.fileHashName
+      var found: Boolean = false;
+      var maxPredecessor: Int = -1;
+
+      var isForwarded: Boolean = false
+      if (amITheSuccessor(fileHashName)) {
+        foundFile(fileHashName, hashName)
+        found = true;
+      }
+
+      if (!found && amIThePredecessor(fileHashName)) {
+        var act = context.actorSelection(Constants.namingPrefix + successor)
+        act ! findSingleFile(fileHashName)
+        isForwarded = true
+      }
+
+      if (!found && !isForwarded) {
+        var act = context.actorSelection(Constants.namingPrefix + finger(closestPrecedingFinger(fileHashName)))
+        act ! findSingleFile(fileHashName)
+      }
+    }
 
     case join: join => {
 
@@ -176,20 +228,20 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
         log.info("Timetaken to boot node " + hashName + " is " + (System.currentTimeMillis() - timeStamp))
       } else {
         var act = context.actorSelection(Constants.namingPrefix + join.myRandNeigh)
-        act ! findPredecessor(hashName, hashName, Constants.setRequest, null)
+        act ! findPredecessor(hashName, hashName, Consts.setRequest, null)
       }
     }
 
     case fg: Finger => {
       log.debug("\tType:Finger\t\tFrom:" + sender.path + "\tTo:" + hashName + "\t Msg: " + fg)
-      if (fg.Type.equals(Constants.fingerRequest)) {
+      if (fg.Type.equals(Consts.fingerRequest)) {
         if (fg.i <= Constants.m) {
           var curIndex = fg.i + 1
           finger(fg.i) = fg.node
           var nextStart: Int = getFingerId(curIndex)
           if (curIndex < Constants.m) {
             var sucActor = context.actorSelection(Constants.namingPrefix + successor)
-            sucActor ! findSuccessor(nextStart, hashName, Constants.fingerRequest, curIndex)
+            sucActor ! findSuccessor(nextStart, hashName, Consts.fingerRequest, curIndex)
           } else {
             //All neighbors are found. Nothing to do.
             log.debug("All actors are found!!")
@@ -218,12 +270,18 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
       for (i <- 0 until Constants.m) {
         var t = updateableNodes(i)
         if (!amIThePredecessor(t)) {
-          preActor ! findPredecessor(updateableNodes(i), hashName, Constants.fingerUpdate, "" + i)
+          preActor ! findPredecessor(updateableNodes(i), hashName, Consts.fingerUpdate, "" + i)
         }
       }
       log.info(hashName + "joined with succ : " + successor + " and predec: " + predecessor)
       isJoined = true;
       Chord.nodesJoined = Chord.nodesJoined + 1;
+    }
+
+    case h: hasFileKey => {
+
+      var found = false;
+
     }
 
     case gs: getSucc => {
@@ -257,7 +315,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
           case x =>
             log.debug("Finger Initing me : " + hashName + " pre: " + predecessor + " Succ: " + successor)
             finger(0) = successor
-            self.tell(Finger(-1, finger(0), Constants.fingerRequest, 0), self)
+            self.tell(Finger(-1, finger(0), Consts.fingerRequest, 0), self)
         }
       }
     }
@@ -291,7 +349,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
       var con2 = (end > start && (f.key >= start && f.key < end))
       var con3 = (end < start && ((f.key >= start && f.key < Constants.totalSpace) || (f.key >= 0 && f.key < end)))
 
-      if (f.reqType.equals(Constants.setRequest)) {
+      if (f.reqType.equals(Consts.setRequest)) {
         if (con1 || con2 || con3) {
           log.debug("con1" + con1 + "con2" + con2 + "con3" + con3)
           var act = context.actorSelection(Constants.namingPrefix + f.origin)
@@ -306,7 +364,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
             act ! f
           }
         }
-      } else if (f.reqType.equals(Constants.fingerUpdate)) {
+      } else if (f.reqType.equals(Consts.fingerUpdate)) {
         log.debug("convalue : " + con1 + con2 + con3)
         if (con1 || con2 || con3) {
           var c1 = (finger(f.data.toInt) > f.origin)
@@ -333,7 +391,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
     }
 
     case s: findSuccessor => {
-      if (s.Type.equals(Constants.fingerRequest)) {
+      if (s.Type.equals(Consts.fingerRequest)) {
         log.debug("\tType:findSuccessor\t\tFrom:" + sender.path + "\tTo:" + hashName + "\t Msg: " + s)
         var start = hashName
         var end = successor
@@ -376,45 +434,6 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
       }
     }
 
-    case fr: findFile => {
-
-      var timestamp = System.currentTimeMillis()
-      var reqsTobeMade = fr.numRequests
-      val scheduler = context.system.scheduler
-
-      for (i <- 1 to fr.numRequests) {
-        var fileStringName = Constants.namingPrefix + hashName + i;
-        var fileHashName = Chord.getHash(fileStringName, Constants.totalSpace)
-        scheduler.scheduleOnce(Duration(i, TimeUnit.SECONDS), self, findSingleFile(fileHashName))
-      }
-      log.info("created in " + (System.currentTimeMillis() - timestamp))
-    }
-
-    case fsf: findSingleFile => {
-      log.debug("search running" + System.currentTimeMillis())
-      Chord.TotalNumofHops = Chord.TotalNumofHops + 1;
-      var fileHashName = fsf.fileHashName
-      var found: Boolean = false;
-      var maxPredecessor: Int = -1;
-
-      var isForwarded: Boolean = false
-      if (amITheSuccessor(fileHashName)) {
-        foundFile(fileHashName, hashName)
-        found = true;
-      }
-
-      if (!found && amIThePredecessor(fileHashName)) {
-        var act = context.actorSelection(Constants.namingPrefix + successor)
-        act ! findSingleFile(fileHashName)
-        isForwarded = true
-      }
-
-      if (!found && !isForwarded) {
-        var act = context.actorSelection(Constants.namingPrefix + finger(closestPrecedingFinger(fileHashName)))
-        act ! findSingleFile(fileHashName)
-      }
-    }
-
     case x: String => {
       if (x.equals("print")) {
         log.info("My name " + hashName + " Pre: " + predecessor + " Succ: " + successor)
@@ -426,6 +445,7 @@ class Peer(val hashName: Int, val abstractName: String, val requests: Int) exten
   }
 
   def foundFile(fileName: Int, foundAt: Int): Unit = {
+    Chord.incrementCounter()
     Chord.fileFound(fileName) = foundAt
   }
 
