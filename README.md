@@ -1,5 +1,3 @@
-
-
 # What is this ? #
 
 This is the implementation of [Chord DHT](https://en.wikipedia.org/wiki/Chord_(peer-to-peer)). The specification of the Chord protocol can be found in the paper **Chord: A Scalable Peer-to-peer Lookup Service for Internet Applications** by Ion Stoica, Robert Morris, David Karger, M. Frans Kaashoek, Hari Balakrishnan. The robust nature of chord lies in its ability to find hashKeys in logarthimic time even when multiple nodes join/leave the network. 
@@ -46,6 +44,7 @@ This project supports dynamic deletion of nodes as well. To run with deletion of
 
 ### Largest network ? ###
 
+```
 19500 Nodes.
 
 Detailed output:
@@ -89,7 +88,7 @@ NUMBEROF DELETED NODES:100
 AVERAGE NUMBER OF HOPS:8
 LOG(NUMNODES)         :13.273212809854334
 
--------------------------------------------
+```
 
 ## Other observations ##
 
