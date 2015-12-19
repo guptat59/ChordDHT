@@ -36,7 +36,7 @@ This project supports dynamic deletion of nodes as well. To run with deletion of
 ```
 
 ## Owners ##
-* [Tarun Gupta Akirala](https://bitbucket.org/tarun_gupta_akirala/) 
+* [Tarun Gupta Akirala](https://github.com/guptat59/ChordDHT) 
 * [Rakesh Dammalapati ](https://bitbucket.org/rakeshdrk/)
 
 
